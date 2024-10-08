@@ -1,7 +1,5 @@
-
 const firstCalculator = document.querySelector('.calculator');
 activateCalculator(firstCalculator);
-
 document.getElementById('add-calculator').addEventListener('click', addNewCalculator);
 
 function addNewCalculator() {
@@ -12,17 +10,34 @@ function addNewCalculator() {
     document.querySelector('#calculator-container').appendChild(newCalculatorDiv);
     activateCalculator(newCalculatorDiv);
 }
+
 function activateCalculator(calculatorDiv) {
     const display = calculatorDiv.querySelector('#calculator__display');
     const calculatorButtons = calculatorDiv.querySelector('.calculator__buttons');
+    const historyDiv = calculatorDiv.querySelector('.calculator__history');
+    const closeHistory = calculatorDiv.querySelector('.close-icon');
+    closeHistory.addEventListener('click',showHistory);
+    const olElement = historyDiv.querySelector('ol');
+    if (olElement) {
+        olElement.remove();
+    }
     let newCalculate = false;
+    let previousAnswer = false;
     let invalid = 0;
     let openingParanthesis = 0;
     let closingParanthesis = 0;
+    const history=[];
+    let answer= 0;
+    let lastChar = '';
+    const normalLabels = ['sin', 'cos', 'tan', 'log','ln'];
+    const shiftedLabels = ['v', 'x', 'y', 'z','Rcl'];
+    let isShifted = false;
+    let variables = {};
+    let recall = 0;
 
     calculatorButtons.addEventListener('click', function(event) {
         const { target } = event;
-        if (target.classList.contains('button')) {
+        if (target.classList.contains('button') && target.id !== 'shift-btn') {
             appendToDisplay(target.innerText);
         } else if (target.id === 'clear') {
             clearDisplay();
@@ -30,11 +45,16 @@ function activateCalculator(calculatorDiv) {
             calculate();
         } else if (target.id === 'delete') {
             newCalculate ? clearDisplay() : removeLastEnteredValue();
+        } else if(target.id === 'history') {
+            showHistory();
         }
+        else if(target.id === 'shift-btn') {
+            toggleShift();
+        }
+
     });
 
     calculatorDiv.addEventListener('keydown', handleKeyboardInput);
-
     function handleKeyboardInput(event) {
         const key = event.key;
         if (key === 'Enter' && !newCalculate) {
@@ -46,20 +66,37 @@ function activateCalculator(calculatorDiv) {
         }
     }
 
+    function toggleShift() {
+       const buttons = calculatorDiv.querySelectorAll('#btn1, #btn2, #btn3, #btn4,#btn5');
+       buttons.forEach((button, index) => {
+        button.textContent = isShifted ? normalLabels[index] : shiftedLabels[index];
+    });
+        isShifted = !isShifted;
+        recall = 0;
+    }
+    
     function clearDisplay() {
         display.value = '';
         openingParanthesis = 0;
         closingParanthesis = 0;
         invalid = 0;
+        newCalculate = false;
+        lastChar = '';
     }
 
     function appendToDisplay(value) {
         if (newCalculate) {
-            display.value = '';
+            display.value = answer;
             newCalculate = false;
+            lastChar = display.value.slice(-1);
+           previousAnswer = true;
         }
-        const lastChar = display.value.slice(-1);
+        else {
+            previousAnswer = false;
+        }
+
         const operators = '+-*/^';
+       
         if (((openingParanthesis <= closingParanthesis || lastChar === '(') && value === ')') || 
         (lastChar === 'E' && isNaN(value)) || value === 'E' && isNaN(lastChar) || lastChar === '(' && '+*/^'.includes(value))  {
             return;
@@ -70,40 +107,59 @@ function activateCalculator(calculatorDiv) {
             closingParanthesis += 1;
         }
 
-        
         if (operators.includes(value)) invalid = 1;
         else invalid = 0;
 
-        if((lastChar === 'π' || lastChar === 'e' || lastChar === '!' || lastChar === '%')&& 
-        (/\d/.test(value) || value === 'π' || value === 'e')) {
+        if((lastChar === 'π' || lastChar === 'e' || lastChar === '!' || lastChar === '%' || lastChar === 's')&& 
+        (/\d/.test(value) || value === 'π' || value === 'e' || value === 'Ans')) {
             display.value += '*';
         }
-
         if (operators.includes(lastChar) && operators.includes(value)) {            
             if (value === '-' && '*/^'.includes(lastChar)) 
                 display.value += value;
             else 
                 display.value = display.value.slice(0, -1) + value;
         }
-        else 
-            display.value += value;
+        else if (shiftedLabels.includes(value) && value !== 'Rcl') {
+            if (recall) {
+             variables.value ? display.value += variables.value : alert(`No value stored in ${value}`);
+                
+            } else {
+                variables.value = display.value;
+                alert(`${display.value} stored in variable ${value}`);
+            }
+            toggleShift();  
+        }
+        
+         else if(value === 'Rcl')
+            recall = 1;
+        else {
+            if(/\d/.test(value) && previousAnswer) {
+             display.value = '';
+             previousAnswer = false ;
 
+            }
+           
+            display.value += value;
+        }
          if(['sin', 'cos', 'tan','√','log','ln'].includes(value)){
             display.value += '(';
             openingParanthesis += 1;
          }
 
+        lastChar = display.value.slice(-1);
+       
     }
 
     function removeLastEnteredValue() {
-        const lastChar = display.value.slice(-1);
+        lastChar = display.value.slice(-1);
         display.value = display.value.slice(0, -1);
         if (lastChar === '(') openingParanthesis--;
         else if (lastChar === ')') closingParanthesis--;
     }
 
     function infixToPostfix(input) {
-        const expression = input.match(/\d+|\-|\(|\)|\+|\*|\/|\^|√|\!|\%|E|e|π|ln|log|sin|cos|tan/g);  
+        const expression = input.match(/\d+|\-|\(|\)|\+|\*|\/|\^|√|\!|\%|Ans|E|e|π|ln|log|sin|cos|tan/g);  
         const precedence = {
             '+': 1,
             '-': 1,
@@ -135,7 +191,12 @@ function activateCalculator(calculatorDiv) {
                 output.push(Math.E);
                 if(/\d/.test(previousChar))
                     operators.push('*');
-            }else if (char in precedence) {
+            } else if(char === 'Ans'){
+                output.push(answer);
+                if(/\d/.test(previousChar))
+                    operators.push('*');
+            }
+            else if (char in precedence) {
                 if (char === '-' && (previousChar === '(' || '*/^'.includes(previousChar))) {
                     operators.push('$');
                 } else {
@@ -163,7 +224,6 @@ function activateCalculator(calculatorDiv) {
         while (operators.length) {
             output.push(operators.pop());
         }
-        console.log(output);
         return output;
     }
     function evaluatePostfix(postfix) {
@@ -213,6 +273,7 @@ function activateCalculator(calculatorDiv) {
                         result.push(Math.tan(operand));
                         break;
                     case '√':
+                        if(operand < 0) throw new Error("Square root of negative number is not real");
                         result.push(Math.sqrt(operand));
                         break;
                     case 'log':
@@ -232,7 +293,6 @@ function activateCalculator(calculatorDiv) {
             } else{
                     throw new Error("Error");
                 }
-          
         }
         return result[0];
     }
@@ -246,8 +306,21 @@ function activateCalculator(calculatorDiv) {
             const input = display.value;
             const postfix = infixToPostfix(input);
             const result = evaluatePostfix(postfix);
+            answer = result;
+            const calculation = `${input} = ${result}`;
             display.value += '=' + '\n' + result;
+            history.push(calculation);
+            if (history.length > 10) {
+                history.shift();  
+                const ol = historyDiv.querySelector('ol');
+                if (ol && ol.firstChild) {
+                    ol.removeChild(ol.firstChild);  
+                }
+            }
+            appendNewHistoryItem(input,result);
             newCalculate = true;
+            lastChar = '';
+            variables ={};
 
         } catch (error) {
             alert(error.message);
@@ -255,13 +328,43 @@ function activateCalculator(calculatorDiv) {
             clearDisplay();
         }
     }
-
-}
-
-function factorial(number) {
-    let fact = 1;
-    for (let i = 2; i <= number; i++) {
-        fact *= i;
+    function appendNewHistoryItem(input,result) {
+        let ol = historyDiv.querySelector('ol');
+        if (!ol) {
+            ol = document.createElement('ol');
+            historyDiv.appendChild(ol);
+        }
+        const historyItem = document.createElement('li');
+        historyItem.innerHTML = `<span id="input">${input}</span><span> = </span><span id = "result">${result}</span>`;
+        ol.appendChild(historyItem);  
+        historyItem.addEventListener('click', function(event) {
+            const { target } = event;
+            if(target.id === 'input' || target.id === 'result') {
+            display.value = target.innerHTML;
+            lastChar = display.value.slice(-1);
+           newCalculate = false;
+            showHistory(); 
+            }
+        });
+        
     }
-    return fact;
+    
+    function showHistory() {
+        historyDiv.classList.toggle('display__history');
+    }
+    
+    function factorial(number) {
+        let fact = 1;
+        for (let i = 2; i <= number; i++) {
+            fact *= i;
+        }
+        return fact;
+    }
+
+
 }
+
+
+
+
+
